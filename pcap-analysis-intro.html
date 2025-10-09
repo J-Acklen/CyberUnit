@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Traffic Analysis with PCAP</title>
+    <style>
+        /* Dark theme variables */
+        :root {
+            --bg-1: #0f1115; /* outer page background */
+            --bg-2: #15161a; /* container */
+            --surface: #1b1d23; /* slide surface */
+            --text: #e6eef8; /* primary text */
+            --muted: #9aa3b2; /* secondary text */
+            --accent: #7b5cff; /* purple accent */
+            --accent-strong: #6249e6;
+            --danger: #ff6b6b;
+            --code-bg: #0b1220;
+            --card-shadow: rgba(0,0,0,0.6);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(1000px 500px at 10% 10%, rgba(123,92,255,0.06), transparent 8%),
+                        linear-gradient(180deg, var(--bg-1), #0b0c10 60%);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .presentation {
+            width: 100%;
+            max-width: 1000px;
+            background: linear-gradient(180deg, var(--surface), #111217);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px var(--card-shadow);
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.03);
+            position: relative; /* enable absolute positioning for header */
+        }
+
+        /* Presentation header (only shown on slide 1 via JS) */
+        .presentation-header {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 28px 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            background: linear-gradient(180deg, rgba(123,92,255,0.04), rgba(11,12,16,0.06));
+            color: var(--text);
+            width: calc(100% - 80px);
+            max-width: 760px;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+        }
+
+        .presentation-header h1 {
+            font-size: 2.6em;
+            margin-bottom: 8px;
+        }
+
+        .presentation-header .subtitle {
+            font-size: 1.05em;
+            opacity: 0.95;
+            color: var(--muted);
+        }
+
+        .slide {
+            display: none;
+            padding: 32px 56px;
+            min-height: 520px;
+            animation: fadeIn 0.5s;
+            background: transparent;
+        }
+
+        .slide.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-title {
+            font-size: 2.1em;
+            color: var(--text);
+            margin-bottom: 20px;
+            border-bottom: 3px solid rgba(123,92,255,0.08);
+            padding-bottom: 12px;
+        }
+
+        .slide-content {
+            font-size: 1.05em;
+            line-height: 1.8;
+            color: var(--muted);
+        }
+
+        .title-slide {
+            /* keep the special background for the first slide when header is shown */
+            background: transparent;
+            /* reduce extra space so header appears centered within the presentation */
+            min-height: 260px;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+
+        .content-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .content-list li {
+            margin: 14px 0;
+            padding-left: 30px;
+            position: relative;
+        }
+
+        .content-list li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+            font-size: 1.4em;
+        }
+
+        .code-block {
+            background: var(--code-bg);
+            color: #a9b6cf;
+            padding: 18px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 18px 0;
+            overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .highlight {
+            background: rgba(123,92,255,0.14);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        /* Darker example/card styles */
+        .example-box {
+            background: linear-gradient(180deg, rgba(12,12,16,0.18), rgba(11,12,16,0.12));
+            border-left: 4px solid var(--accent);
+            padding: 18px;
+            margin: 18px 0;
+            border-radius: 6px;
+            color: var(--muted);
+        }
+
+        /* Colored variants with darker backgrounds and preserved accent borders */
+        .example-box--danger {
+            background: linear-gradient(180deg, rgba(40,12,12,0.16), rgba(11,12,16,0.14));
+            border-left-color: #fc8181;
+            color: var(--text);
+        }
+
+        .example-box--success {
+            background: linear-gradient(180deg, rgba(8,30,12,0.16), rgba(11,12,16,0.14));
+            border-left-color: #4caf50;
+            color: var(--text);
+        }
+
+        .example-box--warn {
+            background: linear-gradient(180deg, rgba(40,30,10,0.12), rgba(11,12,16,0.14));
+            border-left-color: #f39c12;
+            color: var(--text);
+        }
+
+        .example-box--info {
+            background: linear-gradient(180deg, rgba(14,22,40,0.12), rgba(11,12,16,0.14));
+            border-left-color: #2196f3;
+            color: var(--text);
+        }
+
+        .example-box--orange {
+            background: linear-gradient(180deg, rgba(40,24,8,0.12), rgba(11,12,16,0.14));
+            border-left-color: #ff9800;
+            color: var(--text);
+        }
+
+        .example-title {
+            font-weight: bold;
+            color: var(--accent-strong);
+            margin-bottom: 10px;
+        }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 40px;
+            background: transparent;
+            border-top: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .nav-button {
+            padding: 10px 26px;
+            background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.98em;
+            transition: all 0.22s ease;
+            box-shadow: 0 6px 20px rgba(91,82,191,0.16);
+        }
+
+        .nav-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(91,82,191,0.22);
+        }
+
+        .nav-button:disabled {
+            background: rgba(255,255,255,0.04);
+            color: rgba(255,255,255,0.35);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .slide-counter {
+            color: var(--muted);
+            font-size: 0.98em;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 20px 0;
+        }
+
+        .protocol-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            background: rgba(123,92,255,0.18);
+            color: var(--text);
+            border-radius: 14px;
+            font-size: 0.9em;
+            margin: 5px;
+            border: 1px solid rgba(123,92,255,0.06);
+        }
+    </style>
+</head>
+<body>
+    <div class="presentation">
+        <!-- Presentation-wide header (will be shown only for slide 1) -->
+        <div class="presentation-header" id="presentationHeader">
+            <h1>Introduction to Network Traffic Analysis</h1>
+            <p class="subtitle">Understanding PCAP Files &amp; Wireshark</p>
+            <p style="margin-top: 16px; opacity: 0.8; color: var(--muted);">From Theory to Practice with Real CTF Examples</p>
+        </div>
+
+        <!-- Slides -->
+        <div class="slide active title-slide">
+            <!-- first slide kept intentionally minimal (header rendered above) -->
+        </div>
+
+        <!-- Slide 2: What is PCAP? -->
+        <div class="slide">
+            <h1 class="slide-title">What is a PCAP File?</h1>
+            <div class="slide-content">
+                <p><span class="highlight">PCAP</span> stands for <strong>Packet Capture</strong></p>
+                <ul class="content-list">
+                    <li>A binary file format that stores network packet data</li>
+                    <li>Contains raw network traffic including headers and payloads</li>
+                    <li>Can be analyzed offline long after traffic was captured</li>
+                    <li>Standard format supported by multiple tools</li>
+                </ul>
+                
+                <div class="example-box">
+                    <div class="example-title">Common Use Cases:</div>
+                    <div class="two-column">
+                        <div>
+                            • Network troubleshooting<br>
+                            • Security incident response<br>
+                            • Protocol analysis
+                        </div>
+                        <div>
+                            • Performance optimization<br>
+                            • CTF competitions<br>
+                            • Digital forensics
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Essential Tools -->
+        <div class="slide">
+            <h1 class="slide-title">Essential Analysis Tools</h1>
+            <div class="slide-content">
+                <h3 style="color: #667eea; margin-bottom: 15px;">Wireshark</h3>
+                <p>The industry-standard GUI tool for packet analysis</p>
+                <ul class="content-list">
+                    <li>Powerful display filters and search capabilities</li>
+                    <li>"Follow Stream" feature for reconstructing conversations</li>
+                    <li>Protocol dissectors for hundreds of protocols</li>
+                    <li>Export capabilities for specific data</li>
+                </ul>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">TShark</h3>
+                <p>Command-line version of Wireshark for automation</p>
+                
+                <div class="code-block">
+# Basic capture viewing<br>
+tshark -r traffic.pcap<br><br>
+# Filter HTTP traffic<br>
+tshark -r traffic.pcap -Y "http"
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Key Concepts -->
+        <div class="slide">
+            <h1 class="slide-title">Key Analysis Concepts</h1>
+            <div class="slide-content">
+                <h3 style="color: #667eea; margin-bottom: 15px;">Understanding the OSI Model</h3>
+                <ul class="content-list">
+                    <li><strong>Layer 2 (Data Link):</strong> MAC addresses, switches</li>
+                    <li><strong>Layer 3 (Network):</strong> IP addresses, routing</li>
+                    <li><strong>Layer 4 (Transport):</strong> TCP/UDP ports, connections</li>
+                    <li><strong>Layer 7 (Application):</strong> HTTP, FTP, DNS, etc.</li>
+                </ul>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">Common Protocols to Know</h3>
+                <div style="margin-top: 15px;">
+                    <span class="protocol-badge">HTTP/HTTPS</span>
+                    <span class="protocol-badge">DNS</span>
+                    <span class="protocol-badge">FTP</span>
+                    <span class="protocol-badge">SSH/Telnet</span>
+                    <span class="protocol-badge">SMTP</span>
+                    <span class="protocol-badge">TCP/UDP</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Real Example - MTA -->
+        <div class="slide">
+            <h1 class="slide-title">Real-World Example: Fake Software Site</h1>
+            <div class="slide-content">
+                <div class="example-box example-box--danger">
+                    <div class="example-title" style="color: #c53030;">Scenario: Malicious Google Authenticator Download</div>
+                    <p><em>Source: Malware-Traffic-Analysis.net (2025-01-22)</em></p>
+                    <p style="margin-top: 10px;">An employee searched for Google Authenticator and downloaded a suspicious file from a fake website. We need to analyze the captured network traffic to determine what happened.</p>
+                </div>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">Investigation Questions</h3>
+                <ul class="content-list">
+                    <li>What is the IP address of the infected Windows client?</li>
+                    <li>What is the hostname and user account name?</li>
+                    <li>What is the domain name for the fake Google Authenticator page?</li>
+                    <li>What are the command-and-control (C2) server IP addresses?</li>
+                </ul>
+                
+                <div class="example-box example-box--success">
+                    <div class="example-title" style="color: #2e7d32;">Download this PCAP:</div>
+                    Visit <strong>malware-traffic-analysis.net</strong> → Training Exercises → 2025-01-22<br>
+                    (Password-protected for safety - check site's "about" page)
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Following the Stream -->
+        <div class="slide">
+            <h1 class="slide-title">Technique: Following TCP Streams</h1>
+            <div class="slide-content">
+                <p>The <span class="highlight">"Follow TCP Stream"</span> feature reconstructs entire conversations</p>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">How to Use It:</h3>
+                <ul class="content-list">
+                    <li>Right-click any packet in the conversation</li>
+                    <li>Select "Follow" → "TCP Stream"</li>
+                    <li>View the complete back-and-forth exchange</li>
+                    <li>Color coding shows client vs. server traffic</li>
+                </ul>
+                
+                <div class="example-box">
+                    <div class="example-title">What You Can Find:</div>
+                    <ul class="content-list" style="margin-top: 10px;">
+                        <li><strong>Credentials:</strong> Usernames and passwords in plain text protocols</li>
+                        <li><strong>Commands:</strong> System commands executed remotely</li>
+                        <li><strong>File contents:</strong> Text files transferred via FTP or HTTP</li>
+                        <li><strong>API requests:</strong> Full HTTP requests and responses</li>
+                    </ul>
+                </div>
+                
+                <p style="margin-top: 20px; font-style: italic; color: #718096;">This is one of the most powerful features for understanding what actually happened!</p>
+            </div>
+        </div>
+
+        <!-- Slide 7: Finding Post-Exploitation -->
+        <div class="slide">
+            <h1 class="slide-title">Advanced: Identifying Malicious Patterns</h1>
+            <div class="slide-content">
+                <p>After initial compromise, attackers establish persistent access and exfiltrate data</p>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">Common Attack Indicators:</h3>
+                <ul class="content-list">
+                    <li><strong>Initial Access:</strong> Downloads from suspicious domains</li>
+                    <li><strong>C2 Communication:</strong> Periodic beaconing to external IPs</li>
+                    <li><strong>Lateral Movement:</strong> SMB or RDP connections to internal hosts</li>
+                    <li><strong>Data Exfiltration:</strong> Large outbound transfers</li>
+                </ul>
+                
+                <div class="example-box">
+                    <div class="example-title">Wireshark Filters for Investigation:</div>
+                    <div class="code-block" style="margin-top: 10px; font-size: 0.9em;">
+# Find DNS queries<br>
+dns.qry.name contains "malicious"<br><br>
+# HTTP downloads<br>
+http.request.method == "GET" && http.response<br><br>
+# External connections from internal host<br>
+ip.src == 10.1.17.0/24 && !(ip.dst == 10.0.0.0/8)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 8: Common Analysis Techniques -->
+        <div class="slide">
+            <h1 class="slide-title">Essential Analysis Techniques</h1>
+            <div class="slide-content">
+                <div class="two-column">
+                    <div>
+                        <h3 style="color: #667eea; margin-bottom: 10px;">Filter by Protocol</h3>
+                        <div class="code-block" style="font-size: 0.9em;">
+http<br>
+dns<br>
+ftp<br>
+telnet
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="color: #667eea; margin-bottom: 10px;">Filter by IP/Port</h3>
+                        <div class="code-block" style="font-size: 0.9em;">
+ip.addr == 192.168.1.1<br>
+tcp.port == 80<br>
+ip.src == 10.0.0.1
+                        </div>
+                    </div>
+                </div>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">Search for Strings</h3>
+                <ul class="content-list">
+                    <li>Use Edit → Find Packet to search for specific strings</li>
+                    <li>Look for keywords: "password", "login", "admin", "user"</li>
+                    <li>Check hex dumps for readable text in binary protocols</li>
+                </ul>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">Export Objects</h3>
+                <p>File → Export Objects → HTTP/SMB/FTP to extract files transferred over the network</p>
+            </div>
+        </div>
+
+        <!-- Slide 9: Red Flags -->
+        <div class="slide">
+            <h1 class="slide-title">Security Red Flags in PCAP Analysis</h1>
+            <div class="slide-content">
+                <ul class="content-list">
+                    <li><strong>Unencrypted protocols:</strong> Telnet, FTP, HTTP transmitting sensitive data</li>
+                    <li><strong>Unusual ports:</strong> Common services on non-standard ports</li>
+                    <li><strong>Failed login attempts:</strong> Multiple authentication failures followed by success</li>
+                    <li><strong>Suspicious file transfers:</strong> Executables, shells, or exploits</li>
+                    <li><strong>Command execution:</strong> Web requests with system commands in parameters</li>
+                    <li><strong>Data exfiltration:</strong> Large outbound transfers to external IPs</li>
+                </ul>
+                
+                <div class="example-box example-box--warn">
+                    <div class="example-title" style="color: #d68910;">Pro Tip:</div>
+                    Always check "Statistics" → "Conversations" in Wireshark to identify the most active connections and unusual communication patterns.
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 10: Practice Resources -->
+        <div class="slide">
+            <h1 class="slide-title">Where to Get Practice PCAPs</h1>
+            <div class="slide-content">
+                <h3 style="color: #667eea; margin-bottom: 15px;">Free Downloadable Resources</h3>
+                
+                <div class="example-box example-box--info">
+                    <div class="example-title" style="color: #1565c0;">🔥 Highly Recommended:</div>
+                    <strong>Malware-Traffic-Analysis.net</strong><br>
+                    • 100+ real malware traffic captures with exercises<br>
+                    • Updated regularly with current threats<br>
+                    • Includes challenge questions and answers<br>
+                    • Password-protected for safety
+                </div>
+                
+                <h3 style="color: #667eea; margin: 25px 0 15px 0;">More Practice Sources:</h3>
+                <ul class="content-list" style="font-size: 1em;">
+                    <li><strong>Wireshark Sample Captures:</strong> wiki.wireshark.org/SampleCaptures - Protocol examples</li>
+                    <li><strong>NetResec Public PCAPs:</strong> netresec.com - Comprehensive list of PCAP repositories</li>
+                    <li><strong>DFIR Madness:</strong> dfirmadness.com - Forensics challenges with PCAPs</li>
+                    <li><strong>PacketLife:</strong> Archive with protocol references and captures</li>
+                </ul>
+                
+                <div class="example-box example-box--orange" style="margin-top: 20px;">
+                    <div class="example-title" style="color: #e65100;">Pro Tip:</div>
+                    Start with Wireshark samples for clean protocol examples, then move to malware-traffic-analysis.net for realistic attack scenarios.
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 11: Summary -->
+        <div class="slide">
+            <h1 class="slide-title">Key Takeaways</h1>
+            <div class="slide-content">
+                <ul class="content-list" style="font-size: 1.1em;">
+                    <li>PCAP files are essential for network forensics and security analysis</li>
+                    <li>Wireshark's "Follow Stream" feature is invaluable for reconstructing conversations</li>
+                    <li>Unencrypted protocols expose sensitive data in plain text</li>
+                    <li>Look for patterns: authentication attempts, file transfers, command execution</li>
+                    <li>Practice with real CTF challenges to build practical skills</li>
+                    <li>Always correlate multiple indicators to build a complete picture</li>
+                </ul>
+                
+                <div class="example-box example-box--info" style="margin-top: 30px;">
+                    <div class="example-title" style="color: #1565c0;">Remember:</div>
+                    Network traffic analysis is both an art and a science. The more you practice, the better you'll become at spotting anomalies and understanding attacker behavior.
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="navigation">
+            <button class="nav-button" id="prevBtn" onclick="changeSlide(-1)">← Previous</button>
+            <span class="slide-counter">
+                <span id="currentSlide">1</span> / <span id="totalSlides">11</span>
+            </span>
+            <button class="nav-button" id="nextBtn" onclick="changeSlide(1)">Next →</button>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        const headerEl = document.getElementById('presentationHeader');
+        
+        document.getElementById('totalSlides').textContent = totalSlides;
+        
+        function showSlide(n) {
+            slides.forEach(slide => slide.classList.remove('active'));
+            slides[n - 1].classList.add('active');
+            
+            document.getElementById('currentSlide').textContent = n;
+            document.getElementById('prevBtn').disabled = n === 1;
+            document.getElementById('nextBtn').disabled = n === totalSlides;
+
+            // show header only on the first slide
+            if (headerEl) headerEl.style.display = (n === 1) ? 'flex' : 'none';
+        }
+        
+        function changeSlide(direction) {
+            currentSlide += direction;
+            if (currentSlide < 1) currentSlide = 1;
+            if (currentSlide > totalSlides) currentSlide = totalSlides;
+            showSlide(currentSlide);
+        }
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') changeSlide(-1);
+            if (e.key === 'ArrowRight') changeSlide(1);
+        });
+        
+        showSlide(1);
+    </script>
+</body>
+</html>
